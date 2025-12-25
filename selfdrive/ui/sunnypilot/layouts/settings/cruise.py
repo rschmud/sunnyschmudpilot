@@ -5,8 +5,10 @@ This file is part of sunnypilot and is licensed under the MIT License.
 See the LICENSE.md file in the root directory for more details.
 """
 from openpilot.common.params import Params
-from openpilot.system.ui.widgets.scroller_tici import Scroller
+from openpilot.system.ui.widgets.scroller_tici import Scroller, LineSeparator
 from openpilot.system.ui.widgets import Widget
+from openpilot.system.ui.sunnypilot.widgets.list_view import toggle_item_sp
+from openpilot.system.ui.lib.multilang import tr
 
 
 class CruiseLayout(Widget):
@@ -18,8 +20,13 @@ class CruiseLayout(Widget):
     self._scroller = Scroller(items, line_separator=True, spacing=0)
 
   def _initialize_items(self):
-
     items = [
+      toggle_item_sp(
+        title=tr("Auto On at Start"),
+        description=tr("Enable this to automatically turn on adaptive cruise control when the car is started."),
+        param="AutoCruiseOnWithResume"
+      ),
+      LineSeparator()
     ]
     return items
 

@@ -178,11 +178,11 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"TrueVEgoUI", {PERSISTENT | BACKUP, BOOL, "0"}},
 
     // MADS params
-    {"AutoCruiseAndMadsEnable", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"Mads", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"MadsMainCruiseAllowed", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"MadsSteeringMode", {PERSISTENT | BACKUP, INT, "0"}},
     {"MadsUnifiedEngagementMode", {PERSISTENT | BACKUP, BOOL, "1"}},
+    {"AutoCruiseOnWithResume", {PERSISTENT | BACKUP, BOOL, "0"}},
 
     // Model Manager params
     {"ModelManager_ActiveBundle", {PERSISTENT, JSON}},
@@ -252,8 +252,6 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"SpeedLimitOffsetType", {PERSISTENT | BACKUP, INT, "0"}},
     {"SpeedLimitPolicy", {PERSISTENT | BACKUP, INT, "3"}},
     {"SpeedLimitValueOffset", {PERSISTENT | BACKUP, INT, "0"}},
-
-    {"AutoCruiseAndMadsEnable", {PERSISTENT | BACKUP, BOOL, "0"}},
 
     // Smart Cruise Control
     {"MapTargetVelocities", {CLEAR_ON_ONROAD_TRANSITION, STRING}},
