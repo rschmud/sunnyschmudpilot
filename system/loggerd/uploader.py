@@ -140,6 +140,11 @@ class Uploader:
     return None
 
   def do_upload(self, key: str, fn: str):
+    # Short-circuit upload: always return a fake successful response (200 OK)
+    # This bypasses network calls and disables actual uploads.
+    cloudlog.info("do_upload short-circuited: skipping actual upload for %s", key)
+    return FakeResponse()
+
     url_resp = self.api.get("v1.4/" + self.dongle_id + "/upload_url/", timeout=10, path=key, access_token=self.api.get_token())
     if url_resp.status_code == 412:
       return url_resp
