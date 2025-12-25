@@ -31,9 +31,23 @@ def register(show_spinner=False) -> str | None:
   With a backend update to take serial number instead
   of dongle ID to some endpoints, this can be removed
   entirely.
+
+  NOTE: Modified to always mark the device as unregistered.
+  This short-circuits the normal registration flow and writes
+  the unregistered dongle id into Params so the device is always
+  treated as unregistered.
   """
   params = Params()
 
+  # Force device to be treated as unregistered by always setting the DongleId
+  dongle_id = UNREGISTERED_DONGLE_ID
+  params.put("DongleId", dongle_id)
+  set_offroad_alert("Offroad_UnregisteredHardware", (dongle_id == UNREGISTERED_DONGLE_ID) and not PC)
+  cloudlog.info("Forcing device to appear as unregistered dongle")
+  return dongle_id
+
+  # The original registration flow is preserved below for reference,
+  # but will never be reached due to the early return above.
   dongle_id: str | None = params.get("DongleId")
   if dongle_id is None and Path(Paths.persist_root()+"/comma/dongle_id").is_file():
     # not all devices will have this; added early in comma 3X production (2/28/24)
