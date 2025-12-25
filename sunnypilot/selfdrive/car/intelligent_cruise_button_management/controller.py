@@ -10,6 +10,7 @@ from openpilot.common.constants import CV
 from openpilot.common.realtime import DT_CTRL
 from openpilot.sunnypilot.selfdrive.car.intelligent_cruise_button_management.helpers import get_minimum_set_speed
 from openpilot.sunnypilot.selfdrive.car.cruise_ext import CRUISE_BUTTON_TIMER, update_manual_button_timers
+from openpilot.common.params import Params
 
 LongitudinalPlanSource = custom.LongitudinalPlanSP.LongitudinalPlanSource
 State = custom.IntelligentCruiseButtonManagement.IntelligentCruiseButtonManagementState
@@ -44,6 +45,7 @@ class IntelligentCruiseButtonManagement:
     self.is_metric = False
 
     self.cruise_button_timers = CRUISE_BUTTON_TIMER
+    self.params = Params()
 
   @property
   def v_cruise_equal(self) -> bool:
@@ -118,6 +120,11 @@ class IntelligentCruiseButtonManagement:
       return
 
     self.is_metric = is_metric
+
+    auto_enable = self.params.get_bool("AutoCruiseAndMadsEnable")
+    if auto_enable and not CS.cruiseState.enabled:
+      self.is_ready = True
+      self.params.put_bool("Mads", True)
 
     self.update_calculations(CS, LP_SP)
     self.update_readiness(CS, CC)
