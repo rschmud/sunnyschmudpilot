@@ -8,11 +8,13 @@ segment directory. See tools/dashcam/README.md for setup.
 """
 import json
 import os
+import signal
 import subprocess
 import threading
 from dataclasses import dataclass, field
 
 from openpilot.common.swaglog import cloudlog
+from openpilot.system.hardware.hw import Paths
 from openpilot.system.loggerd.uploader import listdir_by_creation
 from openpilot.system.loggerd.xattr_cache import getxattr, setxattr
 
@@ -142,3 +144,37 @@ def upload_segment(cfg: UploadConfig, logdir: str, local_files: list[str]) -> bo
   if not _run_command(rsync_command(cfg, local_files, logdir), RSYNC_TIMEOUT_SECONDS):
     return False
   return _run_command(complete_marker_command(cfg, logdir), SSH_TIMEOUT_SECONDS)
+
+
+def run_cycle(root: str) -> None:
+  cfg = UploadConfig.load()
+  if cfg is None:
+    return
+  if get_current_ssid() != cfg.ssid:
+    return
+
+  for logdir, local_files in find_pending_segments(root, cfg.files):
+    if _exit_event.is_set():
+      return
+    if not upload_segment(cfg, logdir, local_files):
+      return  # network/server problem or shutdown: retry from scratch next cycle
+    try:
+      setxattr(os.path.join(root, logdir), UPLOAD_ATTR_NAME, UPLOAD_ATTR_VALUE)
+    except OSError:
+      cloudlog.exception("dashcam_uploader: setxattr failed")
+
+
+def main(exit_event: threading.Event | None = None) -> None:
+  global _exit_event
+  if exit_event is not None:
+    _exit_event = exit_event
+  signal.signal(signal.SIGTERM, _handle_sigterm)
+
+  cloudlog.info("dashcam_uploader starting")
+  while not _exit_event.is_set():
+    run_cycle(Paths.log_root())
+    _exit_event.wait(CYCLE_SECONDS)
+
+
+if __name__ == "__main__":
+  main()

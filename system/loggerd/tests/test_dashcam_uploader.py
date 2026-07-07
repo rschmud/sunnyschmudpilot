@@ -149,3 +149,41 @@ class TestRunCommand:
     assert dcu._exit_event.is_set()
     assert child.terminated
     dcu._exit_event.clear()
+
+
+class TestRunCycle:
+  def setup_cycle(self, monkeypatch, tmp_path, ssid="HomeNet", cfg=CFG,
+                  pending=None, upload_ok=True):
+    marked, uploads = [], []
+    monkeypatch.setattr(dcu.UploadConfig, "load", classmethod(lambda cls, path=None: cfg))
+    monkeypatch.setattr(dcu, "get_current_ssid", lambda: ssid)
+    monkeypatch.setattr(dcu, "find_pending_segments", lambda root, files: pending or [])
+    monkeypatch.setattr(dcu, "upload_segment", lambda c, ld, lf: uploads.append(ld) or upload_ok)
+    monkeypatch.setattr(dcu, "setxattr", lambda path, attr, val: marked.append(path))
+    return uploads, marked
+
+  def test_uploads_and_marks_pending_segments(self, monkeypatch, tmp_path):
+    pending = [("seg--1", ["/r/seg--1/fcamera.hevc"]), ("seg--2", ["/r/seg--2/fcamera.hevc"])]
+    uploads, marked = self.setup_cycle(monkeypatch, tmp_path, pending=pending)
+    dcu.run_cycle("/r")
+    assert uploads == ["seg--1", "seg--2"]
+    assert marked == ["/r/seg--1", "/r/seg--2"]
+
+  def test_wrong_ssid_does_nothing(self, monkeypatch, tmp_path):
+    uploads, _ = self.setup_cycle(monkeypatch, tmp_path, ssid="CoffeeShop",
+                                  pending=[("seg--1", ["/r/seg--1/fcamera.hevc"])])
+    dcu.run_cycle("/r")
+    assert uploads == []
+
+  def test_no_config_does_nothing(self, monkeypatch, tmp_path):
+    uploads, _ = self.setup_cycle(monkeypatch, tmp_path, cfg=None,
+                                  pending=[("seg--1", ["/r/seg--1/fcamera.hevc"])])
+    dcu.run_cycle("/r")
+    assert uploads == []
+
+  def test_failed_upload_stops_cycle_and_marks_nothing(self, monkeypatch, tmp_path):
+    pending = [("seg--1", ["/r/seg--1/fcamera.hevc"]), ("seg--2", ["/r/seg--2/fcamera.hevc"])]
+    uploads, marked = self.setup_cycle(monkeypatch, tmp_path, pending=pending, upload_ok=False)
+    dcu.run_cycle("/r")
+    assert uploads == ["seg--1"]  # gave up after first failure, retry next cycle
+    assert marked == []
