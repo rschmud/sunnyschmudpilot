@@ -79,9 +79,10 @@ class TestCommands:
 
 
 class TestSsid:
-  def test_ssid_unavailable_returns_none(self, monkeypatch):
+  def test_ssid_unavailable_returns_none(self):
     # on PC / when wpa_supplicant socket is missing, the import-and-query must not raise
-    assert dcu.get_current_ssid() is None or isinstance(dcu.get_current_ssid(), str)
+    ssid = dcu.get_current_ssid()
+    assert ssid is None or isinstance(ssid, str)
 
 
 class TestFindPendingSegments:
