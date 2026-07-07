@@ -13,7 +13,14 @@ if [ ! -f "$DIR/id_ed25519" ]; then
   ssh-keygen -t ed25519 -N "" -f "$DIR/id_ed25519" -C "comma-dashcam"
 fi
 
-ssh-keyscan -p "$PORT" "$HOST" > "$DIR/known_hosts" 2>/dev/null
+KEYSCAN_TMP="$(mktemp)"
+ssh-keyscan -p "$PORT" "$HOST" > "$KEYSCAN_TMP" 2>/dev/null
+if [ ! -s "$KEYSCAN_TMP" ]; then
+  rm -f "$KEYSCAN_TMP"
+  echo "error: ssh-keyscan got no keys from $HOST:$PORT (host unreachable?)" >&2
+  exit 1
+fi
+mv "$KEYSCAN_TMP" "$DIR/known_hosts"
 
 if [ ! -f "$DIR/config.json" ]; then
   cat > "$DIR/config.json" <<EOF

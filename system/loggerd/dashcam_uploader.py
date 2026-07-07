@@ -34,6 +34,9 @@ RSYNC_TIMEOUT_SECONDS = 600
 SSH_TIMEOUT_SECONDS = 30
 
 
+_config_warned = False
+
+
 @dataclass
 class UploadConfig:
   ssid: str
@@ -45,18 +48,26 @@ class UploadConfig:
 
   @classmethod
   def load(cls, path: str = CONFIG_PATH) -> "UploadConfig | None":
+    global _config_warned
     try:
       with open(path) as f:
         raw = json.load(f)
       files = raw.get("files", DEFAULT_FILES)
       if not isinstance(files, list):
         raise TypeError(f"files must be a list, got {type(files).__name__}")
-      return cls(ssid=raw["ssid"], host=raw["host"], user=raw["user"], remote_root=raw["remote_root"],
-                 port=int(raw.get("port", 22)), files=list(files))
+      cfg = cls(ssid=raw["ssid"], host=raw["host"], user=raw["user"], remote_root=raw["remote_root"],
+                port=int(raw.get("port", 22)), files=list(files))
+      _config_warned = False
+      return cfg
     except FileNotFoundError:
+      if not _config_warned:
+        cloudlog.info(f"dashcam_uploader: no config at {path}, idling")
+        _config_warned = True
       return None
     except (json.JSONDecodeError, KeyError, TypeError, ValueError):
-      cloudlog.exception("dashcam_uploader: invalid config, idling")
+      if not _config_warned:
+        cloudlog.exception("dashcam_uploader: invalid config, idling")
+        _config_warned = True
       return None
 
 
@@ -124,6 +135,7 @@ def _run_command(cmd: list[str], timeout: float) -> bool:
     return _child.returncode == 0
   except subprocess.TimeoutExpired:
     _child.kill()
+    _child.wait()
     cloudlog.warning(f"dashcam_uploader: {cmd[0]} timed out after {timeout}s")
     return False
   except OSError:
@@ -133,7 +145,7 @@ def _run_command(cmd: list[str], timeout: float) -> bool:
     _child = None
 
 
-def _handle_sigterm(signum, frame) -> None:
+def _handle_stop_signal(signum, frame) -> None:
   _exit_event.set()
   child = _child
   if child is not None:
@@ -157,7 +169,9 @@ def run_cycle(root: str) -> None:
     if _exit_event.is_set():
       return
     if not upload_segment(cfg, logdir, local_files):
-      return  # network/server problem or shutdown: retry from scratch next cycle
+      # network/server problem or shutdown: retry from scratch next cycle (oldest-first; a permanently
+      # failing segment blocks newer ones until deleter rotates it)
+      return
     try:
       setxattr(os.path.join(root, logdir), UPLOAD_ATTR_NAME, UPLOAD_ATTR_VALUE)
     except OSError:
@@ -168,7 +182,9 @@ def main(exit_event: threading.Event | None = None) -> None:
   global _exit_event
   if exit_event is not None:
     _exit_event = exit_event
-  signal.signal(signal.SIGTERM, _handle_sigterm)
+  # the process manager stops us with SIGINT (see system/manager/process.py); SIGTERM kept for manual kills
+  signal.signal(signal.SIGINT, _handle_stop_signal)
+  signal.signal(signal.SIGTERM, _handle_stop_signal)
 
   cloudlog.info("dashcam_uploader starting")
   while not _exit_event.is_set():

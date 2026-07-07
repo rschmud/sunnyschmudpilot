@@ -1,4 +1,6 @@
 import json
+import signal
+import threading
 
 import openpilot.system.loggerd.dashcam_uploader as dcu
 
@@ -46,6 +48,16 @@ class TestUploadConfig:
 
   def test_load_missing_required_key_returns_none(self, tmp_path):
     assert dcu.UploadConfig.load(self.write_config(tmp_path, {"ssid": "HomeNet"})) is None
+
+  def test_load_logs_error_only_once(self, tmp_path, monkeypatch):
+    dcu._config_warned = False
+    logged = []
+    monkeypatch.setattr(dcu.cloudlog, "exception", lambda msg: logged.append(msg))
+    path = self.write_config(tmp_path, "{not json")
+    assert dcu.UploadConfig.load(path) is None
+    assert dcu.UploadConfig.load(path) is None
+    assert len(logged) == 1
+    dcu._config_warned = False
 
 
 CFG = dcu.UploadConfig(ssid="HomeNet", host="1.2.3.4", user="ubuntu", remote_root="/srv/dashcam", port=2222)
@@ -139,17 +151,31 @@ class TestRunCommand:
   def test_run_command_failure(self):
     assert dcu._run_command(["false"], timeout=5) is False
 
-  def test_sigterm_handler_sets_exit_and_kills_child(self, monkeypatch):
+  def test_stop_signal_handler_sets_exit_and_kills_child(self, monkeypatch):
     class FakeChild:
       terminated = False
       def terminate(self):
         self.terminated = True
     child = FakeChild()
     monkeypatch.setattr(dcu, "_child", child)
-    dcu._handle_sigterm(15, None)
+    dcu._handle_stop_signal(15, None)
     assert dcu._exit_event.is_set()
     assert child.terminated
     dcu._exit_event.clear()
+
+  def test_main_registers_stop_handlers_and_exits_when_event_set(self):
+    ev = threading.Event()
+    ev.set()
+    old_int, old_term = signal.getsignal(signal.SIGINT), signal.getsignal(signal.SIGTERM)
+    old_event = dcu._exit_event
+    try:
+      dcu.main(exit_event=ev)  # returns immediately: event pre-set
+      assert signal.getsignal(signal.SIGINT) is dcu._handle_stop_signal
+      assert signal.getsignal(signal.SIGTERM) is dcu._handle_stop_signal
+    finally:
+      signal.signal(signal.SIGINT, old_int)
+      signal.signal(signal.SIGTERM, old_term)
+      dcu._exit_event = old_event
 
 
 class TestRunCycle:
