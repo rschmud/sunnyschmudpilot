@@ -41,8 +41,11 @@ class UploadConfig:
     try:
       with open(path) as f:
         raw = json.load(f)
+      files = raw.get("files", DEFAULT_FILES)
+      if not isinstance(files, list):
+        raise TypeError(f"files must be a list, got {type(files).__name__}")
       return cls(ssid=raw["ssid"], host=raw["host"], user=raw["user"], remote_root=raw["remote_root"],
-                 port=int(raw.get("port", 22)), files=list(raw.get("files", DEFAULT_FILES)))
+                 port=int(raw.get("port", 22)), files=list(files))
     except FileNotFoundError:
       return None
     except (json.JSONDecodeError, KeyError, TypeError, ValueError):

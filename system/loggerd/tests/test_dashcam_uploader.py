@@ -37,5 +37,12 @@ class TestUploadConfig:
   def test_load_malformed_json_returns_none(self, tmp_path):
     assert dcu.UploadConfig.load(self.write_config(tmp_path, "{not json")) is None
 
+  def test_load_files_not_a_list_returns_none(self, tmp_path):
+    path = self.write_config(tmp_path, {
+      "ssid": "HomeNet", "host": "1.2.3.4", "user": "ubuntu", "remote_root": "/srv/dashcam",
+      "files": "fcamera.hevc",
+    })
+    assert dcu.UploadConfig.load(path) is None
+
   def test_load_missing_required_key_returns_none(self, tmp_path):
     assert dcu.UploadConfig.load(self.write_config(tmp_path, {"ssid": "HomeNet"})) is None
