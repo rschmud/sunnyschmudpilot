@@ -7,9 +7,12 @@ missing or invalid the daemon idles. Uploaded segments are marked with an xattr 
 segment directory. See tools/dashcam/README.md for setup.
 """
 import json
+import os
 from dataclasses import dataclass, field
 
 from openpilot.common.swaglog import cloudlog
+from openpilot.system.loggerd.uploader import listdir_by_creation
+from openpilot.system.loggerd.xattr_cache import getxattr, setxattr
 
 CONFIG_DIR = "/data/dashcam_upload"
 CONFIG_PATH = CONFIG_DIR + "/config.json"
@@ -83,3 +86,21 @@ def get_current_ssid() -> str | None:
     return wpa_supplicant_cmd("STATUS").get("ssid") or None
   except Exception:
     return None
+
+
+def find_pending_segments(root: str, files: list[str]) -> list[tuple[str, list[str]]]:
+  """(logdir, [absolute paths of wanted files present]) for un-uploaded segments, oldest first."""
+  pending = []
+  for logdir in listdir_by_creation(root):
+    if "--" not in logdir:  # boot/, crash/, etc.
+      continue
+    path = os.path.join(root, logdir)
+    try:
+      if getxattr(path, UPLOAD_ATTR_NAME) == UPLOAD_ATTR_VALUE:
+        continue
+    except OSError:
+      continue  # deleter may have removed the segment mid-walk
+    present = [os.path.join(path, f) for f in files if os.path.exists(os.path.join(path, f))]
+    if present:
+      pending.append((logdir, present))
+  return pending

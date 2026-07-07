@@ -82,3 +82,36 @@ class TestSsid:
   def test_ssid_unavailable_returns_none(self, monkeypatch):
     # on PC / when wpa_supplicant socket is missing, the import-and-query must not raise
     assert dcu.get_current_ssid() is None or isinstance(dcu.get_current_ssid(), str)
+
+
+class TestFindPendingSegments:
+  def make_segment(self, root, name, files):
+    d = root / name
+    d.mkdir(parents=True)
+    for f in files:
+      (d / f).write_bytes(b"x")
+    return d
+
+  def patch_xattrs(self, monkeypatch, uploaded: set[str]):
+    monkeypatch.setattr(dcu, "getxattr",
+                        lambda path, attr: dcu.UPLOAD_ATTR_VALUE if path in uploaded else None)
+
+  def test_pending_oldest_first_with_present_files_only(self, tmp_path, monkeypatch):
+    self.patch_xattrs(monkeypatch, set())
+    self.make_segment(tmp_path, "00000004--0ac3964c96--10", ["fcamera.hevc", "qlog.zst"])
+    self.make_segment(tmp_path, "00000004--0ac3964c96--2", ["fcamera.hevc", "ecamera.hevc", "qlog.zst"])
+    pending = dcu.find_pending_segments(str(tmp_path), dcu.DEFAULT_FILES)
+    assert [p[0] for p in pending] == ["00000004--0ac3964c96--2", "00000004--0ac3964c96--10"]
+    seg2_files = [f.rsplit("/", 1)[-1] for f in pending[0][1]]
+    assert seg2_files == ["fcamera.hevc", "ecamera.hevc", "qlog.zst"]  # only files that exist
+
+  def test_uploaded_segments_skipped(self, tmp_path, monkeypatch):
+    d = self.make_segment(tmp_path, "00000004--0ac3964c96--2", ["fcamera.hevc"])
+    self.patch_xattrs(monkeypatch, {str(d)})
+    assert dcu.find_pending_segments(str(tmp_path), dcu.DEFAULT_FILES) == []
+
+  def test_non_segment_dirs_and_empty_segments_skipped(self, tmp_path, monkeypatch):
+    self.patch_xattrs(monkeypatch, set())
+    self.make_segment(tmp_path, "boot", ["2024-01-01--00-00-00.zst"])
+    self.make_segment(tmp_path, "00000004--0ac3964c96--3", ["rlog"])  # none of the wanted files
+    assert dcu.find_pending_segments(str(tmp_path), dcu.DEFAULT_FILES) == []
