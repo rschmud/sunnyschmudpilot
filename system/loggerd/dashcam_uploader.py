@@ -8,6 +8,8 @@ segment directory. See tools/dashcam/README.md for setup.
 """
 import json
 import os
+import subprocess
+import threading
 from dataclasses import dataclass, field
 
 from openpilot.common.swaglog import cloudlog
@@ -104,3 +106,39 @@ def find_pending_segments(root: str, files: list[str]) -> list[tuple[str, list[s
     if present:
       pending.append((logdir, present))
   return pending
+
+
+_exit_event = threading.Event()
+_child: subprocess.Popen | None = None
+
+
+def _run_command(cmd: list[str], timeout: float) -> bool:
+  global _child
+  try:
+    _child = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    _, stderr = _child.communicate(timeout=timeout)
+    if _child.returncode != 0:
+      cloudlog.warning(f"dashcam_uploader: {cmd[0]} failed rc={_child.returncode}: {stderr.decode(errors='replace')[:500]}")
+    return _child.returncode == 0
+  except subprocess.TimeoutExpired:
+    _child.kill()
+    cloudlog.warning(f"dashcam_uploader: {cmd[0]} timed out after {timeout}s")
+    return False
+  except OSError:
+    cloudlog.exception("dashcam_uploader: failed to spawn command")
+    return False
+  finally:
+    _child = None
+
+
+def _handle_sigterm(signum, frame) -> None:
+  _exit_event.set()
+  child = _child
+  if child is not None:
+    child.terminate()
+
+
+def upload_segment(cfg: UploadConfig, logdir: str, local_files: list[str]) -> bool:
+  if not _run_command(rsync_command(cfg, local_files, logdir), RSYNC_TIMEOUT_SECONDS):
+    return False
+  return _run_command(complete_marker_command(cfg, logdir), SSH_TIMEOUT_SECONDS)

@@ -115,3 +115,37 @@ class TestFindPendingSegments:
     self.make_segment(tmp_path, "boot", ["2024-01-01--00-00-00.zst"])
     self.make_segment(tmp_path, "00000004--0ac3964c96--3", ["rlog"])  # none of the wanted files
     assert dcu.find_pending_segments(str(tmp_path), dcu.DEFAULT_FILES) == []
+
+
+class TestUploadSegment:
+  def test_success_runs_rsync_then_marker(self, monkeypatch):
+    calls = []
+    monkeypatch.setattr(dcu, "_run_command", lambda cmd, timeout: calls.append(cmd[0]) or True)
+    assert dcu.upload_segment(CFG, "00000004--0ac3964c96--2", ["/x/fcamera.hevc"]) is True
+    assert calls == ["rsync", "ssh"]
+
+  def test_rsync_failure_skips_marker(self, monkeypatch):
+    calls = []
+    monkeypatch.setattr(dcu, "_run_command", lambda cmd, timeout: calls.append(cmd[0]) and False)
+    assert dcu.upload_segment(CFG, "00000004--0ac3964c96--2", ["/x/fcamera.hevc"]) is False
+    assert calls == ["rsync"]
+
+
+class TestRunCommand:
+  def test_run_command_success(self):
+    assert dcu._run_command(["true"], timeout=5) is True
+
+  def test_run_command_failure(self):
+    assert dcu._run_command(["false"], timeout=5) is False
+
+  def test_sigterm_handler_sets_exit_and_kills_child(self, monkeypatch):
+    class FakeChild:
+      terminated = False
+      def terminate(self):
+        self.terminated = True
+    child = FakeChild()
+    monkeypatch.setattr(dcu, "_child", child)
+    dcu._handle_sigterm(15, None)
+    assert dcu._exit_event.is_set()
+    assert child.terminated
+    dcu._exit_event.clear()
