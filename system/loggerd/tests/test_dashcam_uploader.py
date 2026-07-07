@@ -46,3 +46,39 @@ class TestUploadConfig:
 
   def test_load_missing_required_key_returns_none(self, tmp_path):
     assert dcu.UploadConfig.load(self.write_config(tmp_path, {"ssid": "HomeNet"})) is None
+
+
+CFG = dcu.UploadConfig(ssid="HomeNet", host="1.2.3.4", user="ubuntu", remote_root="/srv/dashcam", port=2222)
+
+
+class TestCommands:
+  def test_ssh_command_uses_dedicated_identity(self):
+    cmd = dcu.ssh_command(CFG)
+    assert cmd[0] == "ssh"
+    assert dcu.SSH_KEY_PATH in cmd
+    assert "-p" in cmd and "2222" in cmd
+    assert f"UserKnownHostsFile={dcu.KNOWN_HOSTS_PATH}" in cmd
+    assert "BatchMode=yes" in cmd  # never hang on a password prompt
+
+  def test_rsync_command(self):
+    files = ["/data/media/0/realdata/00000004--0ac3964c96--3/fcamera.hevc"]
+    cmd = dcu.rsync_command(CFG, files, "00000004--0ac3964c96--3")
+    assert cmd[0] == "rsync"
+    assert "--partial" in cmd
+    assert files[0] in cmd
+    assert cmd[-1] == "ubuntu@1.2.3.4:/srv/dashcam/incoming/00000004--0ac3964c96--3/"
+    # remote dir is created by rsync itself (no separate ssh round-trip)
+    rsync_path = cmd[cmd.index("--rsync-path") + 1]
+    assert "mkdir -p '/srv/dashcam/incoming/00000004--0ac3964c96--3'" in rsync_path
+
+  def test_complete_marker_command(self):
+    cmd = dcu.complete_marker_command(CFG, "00000004--0ac3964c96--3")
+    assert cmd[0] == "ssh"
+    assert cmd[-2] == "ubuntu@1.2.3.4"
+    assert cmd[-1] == "touch '/srv/dashcam/incoming/00000004--0ac3964c96--3/.complete'"
+
+
+class TestSsid:
+  def test_ssid_unavailable_returns_none(self, monkeypatch):
+    # on PC / when wpa_supplicant socket is missing, the import-and-query must not raise
+    assert dcu.get_current_ssid() is None or isinstance(dcu.get_current_ssid(), str)

@@ -51,3 +51,35 @@ class UploadConfig:
     except (json.JSONDecodeError, KeyError, TypeError, ValueError):
       cloudlog.exception("dashcam_uploader: invalid config, idling")
       return None
+
+
+def ssh_command(cfg: UploadConfig) -> list[str]:
+  return ["ssh", "-i", SSH_KEY_PATH, "-p", str(cfg.port),
+          "-o", f"UserKnownHostsFile={KNOWN_HOSTS_PATH}",
+          "-o", "BatchMode=yes",
+          "-o", "ConnectTimeout=10"]
+
+
+def _remote_dir(cfg: UploadConfig, logdir: str) -> str:
+  return f"{cfg.remote_root}/incoming/{logdir}"
+
+
+def rsync_command(cfg: UploadConfig, local_files: list[str], logdir: str) -> list[str]:
+  remote_dir = _remote_dir(cfg, logdir)
+  return ["rsync", "-t", "--partial", "--timeout=30",
+          "--rsync-path", f"mkdir -p '{remote_dir}' && rsync",
+          "-e", " ".join(ssh_command(cfg)),
+          *local_files,
+          f"{cfg.user}@{cfg.host}:{remote_dir}/"]
+
+
+def complete_marker_command(cfg: UploadConfig, logdir: str) -> list[str]:
+  return [*ssh_command(cfg), f"{cfg.user}@{cfg.host}", f"touch '{_remote_dir(cfg, logdir)}/.complete'"]
+
+
+def get_current_ssid() -> str | None:
+  try:
+    from openpilot.system.hardware.tici.hardware import wpa_supplicant_cmd  # lazy: TICI-only module
+    return wpa_supplicant_cmd("STATUS").get("ssid") or None
+  except Exception:
+    return None
